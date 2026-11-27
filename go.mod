@@ -89,4 +89,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/devopsarr/sonarr-go => ../sonarr-go
+replace github.com/devopsarr/sonarr-go => github.com/remreren/sonarr-go v1.1.4-0.20261127211752-049c01726593
