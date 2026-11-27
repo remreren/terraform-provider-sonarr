@@ -225,6 +225,10 @@ func (r *ImportListImdbResource) Update(ctx context.Context, req resource.Update
 	// Update ImportListImdb
 	request := importList.read(ctx, &resp.Diagnostics)
 
+	if !keepImportListUnset(r.auth, r.client, request, &resp.Diagnostics) {
+		return
+	}
+
 	response, _, err := r.client.ImportListAPI.UpdateImportList(r.auth, request.GetId()).ImportListResource(*request).Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Update, importListImdbResourceName, err))

@@ -81,17 +81,17 @@ func (r *QualityDefinitionResource) Schema(_ context.Context, _ resource.SchemaR
 				Required:            true,
 			},
 			"min_size": schema.Float64Attribute{
-				MarkdownDescription: "Minimum size MB/min.",
+				MarkdownDescription: "Minimum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},
 			"max_size": schema.Float64Attribute{
-				MarkdownDescription: "Maximum size MB/min.",
+				MarkdownDescription: "Maximum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},
 			"preferred_size": schema.Float64Attribute{
-				MarkdownDescription: "Preferred size MB/min.",
+				MarkdownDescription: "Preferred size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},

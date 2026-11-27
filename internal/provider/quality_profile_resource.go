@@ -132,6 +132,57 @@ func (q ProfileQuality) setSizes(item *sonarr.QualityProfileQualityItemResource)
 	}
 }
 
+// fillProfileSizes copies sizes (Sonarr v5+) from source onto every quality of request that has
+// none configured, matched by quality ID: Sonarr v5 sets a size left out of a PUT to null.
+// Sources without sizes (Sonarr v4) copy nothing.
+func fillProfileSizes(request, source *sonarr.QualityProfileResource) {
+	sizes := map[int32]sonarr.QualityProfileQualityItemResource{}
+
+	var collect func(items []sonarr.QualityProfileQualityItemResource)
+	collect = func(items []sonarr.QualityProfileQualityItemResource) {
+		for _, item := range items {
+			if item.Quality != nil {
+				sizes[item.Quality.GetId()] = item
+			}
+
+			collect(item.GetItems())
+		}
+	}
+	collect(source.GetItems())
+
+	var fill func(items []sonarr.QualityProfileQualityItemResource)
+	fill = func(items []sonarr.QualityProfileQualityItemResource) {
+		for i := range items {
+			item := &items[i]
+			if item.Quality != nil {
+				if from, ok := sizes[item.Quality.GetId()]; ok {
+					copySize(item.HasMinSize, from.GetMinSizeOk, item.SetMinSize, item.SetMinSizeNil)
+					copySize(item.HasMaxSize, from.GetMaxSizeOk, item.SetMaxSize, item.SetMaxSizeNil)
+					copySize(item.HasPreferredSize, from.GetPreferredSizeOk, item.SetPreferredSize, item.SetPreferredSizeNil)
+				}
+			}
+
+			fill(item.Items)
+		}
+	}
+	fill(request.Items)
+}
+
+func copySize(has func() bool, from func() (*float64, bool), set func(float64), setNil func()) {
+	v, ok := from()
+	if has() || !ok {
+		return
+	}
+
+	if v == nil {
+		setNil()
+
+		return
+	}
+
+	set(*v)
+}
+
 // FormatItem is part of QualityProfile.
 type FormatItem struct {
 	Name   types.String `tfsdk:"name"`
@@ -342,6 +393,16 @@ func (r *QualityProfileResource) Create(ctx context.Context, req resource.Create
 	// Build Create resource
 	request := profile.read(ctx, r.getQualityIDs(&resp.Diagnostics), r.getFormatsIDs(&resp.Diagnostics), &resp.Diagnostics)
 
+	// Sizes not configured: Sonarr's defaults for a new profile (its schema), else v5 sets none.
+	template, _, err := r.client.QualityProfileSchemaAPI.GetQualityprofileSchema(r.auth).Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Create, qualityProfileResourceName, err))
+
+		return
+	}
+
+	fillProfileSizes(request, template)
+
 	// Create new QualityProfile
 	response, _, err := r.client.QualityProfileAPI.CreateQualityProfile(r.auth).QualityProfileResource(*request).Execute()
 	if err != nil {
@@ -399,6 +460,16 @@ func (r *QualityProfileResource) Update(ctx context.Context, req resource.Update
 
 	// Build Update resource
 	request := profile.read(ctx, r.getQualityIDs(&resp.Diagnostics), r.getFormatsIDs(&resp.Diagnostics), &resp.Diagnostics)
+
+	// Sizes not configured: keep the profile's current ones (Sonarr v5 wipes sizes left out).
+	current, _, err := r.client.QualityProfileAPI.GetQualityProfileById(r.auth, request.GetId()).Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Update, qualityProfileResourceName, err))
+
+		return
+	}
+
+	fillProfileSizes(request, current)
 
 	// Update QualityProfile
 	response, _, err := r.client.QualityProfileAPI.UpdateQualityProfile(r.auth, strconv.Itoa(int(request.GetId()))).QualityProfileResource(*request).Execute()

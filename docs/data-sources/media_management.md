@@ -39,6 +39,10 @@ data "sonarr_media_management" "example" {
 - `recycle_bin_days` (Number) Recyle bin days of retention.
 - `recycle_bin_path` (String) Recycle bin absolute path.
 - `rescan_after_refresh` (String) Rescan after refresh policy. valid inputs are: 'always', 'afterManual' and 'never'.
+- `season_pack_upgrade` (String) Upgrade to a season pack: 'all', 'threshold' or 'any' (Sonarr v5+).
+- `season_pack_upgrade_threshold` (Number) Percent of episodes a season pack must upgrade (Sonarr v5+).
 - `set_permissions` (Boolean) Set permission for imported files.
 - `skip_free_space_check` (Boolean) Skip free space check before importing.
+- `skip_free_space_check_when_grabbing` (Boolean) Skip the free space check when grabbing (Sonarr v5+).
 - `unmonitor_previous_episodes` (Boolean) Unmonitor deleted files.
+- `user_rejected_extensions` (String) Comma separated list of file extensions rejected on import (Sonarr v5+).

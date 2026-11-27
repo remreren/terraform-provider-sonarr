@@ -94,6 +94,7 @@ func (p ProxyConfig) getType() attr.Type {
 type SSLConfig struct {
 	CertificateValidation types.String `tfsdk:"certificate_validation"`
 	CertPath              types.String `tfsdk:"cert_path"`
+	KeyPath               types.String `tfsdk:"key_path"`
 	CertPassword          types.String `tfsdk:"cert_password"`
 	Port                  types.Int64  `tfsdk:"port"`
 	Enabled               types.Bool   `tfsdk:"enabled"`
@@ -104,6 +105,7 @@ func (s SSLConfig) getType() attr.Type {
 		map[string]attr.Type{
 			"certificate_validation": types.StringType,
 			"cert_path":              types.StringType,
+			"key_path":               types.StringType,
 			"cert_password":          types.StringType,
 			"port":                   types.Int64Type,
 			"enabled":                types.BoolType,
@@ -112,21 +114,31 @@ func (s SSLConfig) getType() attr.Type {
 
 // AuthConfig is part of Host.
 type AuthConfig struct {
-	Method            types.String `tfsdk:"method"`
-	Username          types.String `tfsdk:"username"`
-	Password          types.String `tfsdk:"password"`
-	EncryptedPassword types.String `tfsdk:"encrypted_password"`
-	Required          types.String `tfsdk:"required"`
+	Method             types.String `tfsdk:"method"`
+	Username           types.String `tfsdk:"username"`
+	Password           types.String `tfsdk:"password"`
+	EncryptedPassword  types.String `tfsdk:"encrypted_password"`
+	Required           types.String `tfsdk:"required"`
+	OidcAuthority      types.String `tfsdk:"oidc_authority"`
+	OidcClientID       types.String `tfsdk:"oidc_client_id"`
+	OidcClientSecret   types.String `tfsdk:"oidc_client_secret"`
+	OidcScopes         types.String `tfsdk:"oidc_scopes"`
+	OidcUserIdentifier types.String `tfsdk:"oidc_user_identifier"`
 }
 
 func (a AuthConfig) getType() attr.Type {
 	return types.ObjectType{}.WithAttributeTypes(
 		map[string]attr.Type{
-			"method":             types.StringType,
-			"username":           types.StringType,
-			"password":           types.StringType,
-			"encrypted_password": types.StringType,
-			"required":           types.StringType,
+			"method":               types.StringType,
+			"username":             types.StringType,
+			"password":             types.StringType,
+			"encrypted_password":   types.StringType,
+			"required":             types.StringType,
+			"oidc_authority":       types.StringType,
+			"oidc_client_id":       types.StringType,
+			"oidc_client_secret":   types.StringType,
+			"oidc_scopes":          types.StringType,
+			"oidc_user_identifier": types.StringType,
 		})
 }
 
@@ -340,9 +352,50 @@ func (r *HostResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Optional:            true,
 						Computed:            true,
 						Validators: []validator.String{
-							stringvalidator.OneOf("disabledForLocalAddresses", "enabled"),
+							stringvalidator.OneOf("disabledForLocalAddresses", "enabled", "disabledForLocalhost"),
 						},
 						Default: stringdefault.StaticString("disabledForLocalAddresses"),
+					},
+					"oidc_authority": schema.StringAttribute{
+						MarkdownDescription: "OIDC authority (issuer URL). Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"oidc_client_id": schema.StringAttribute{
+						MarkdownDescription: "OIDC client ID. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"oidc_client_secret": schema.StringAttribute{
+						MarkdownDescription: "OIDC client secret. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						Sensitive:           true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"oidc_scopes": schema.StringAttribute{
+						MarkdownDescription: "OIDC scopes. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"oidc_user_identifier": schema.StringAttribute{
+						MarkdownDescription: "OIDC claim that identifies the user. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -358,6 +411,14 @@ func (r *HostResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						MarkdownDescription: "Certificate path.",
 						Optional:            true,
 						Computed:            true,
+					},
+					"key_path": schema.StringAttribute{
+						MarkdownDescription: "Certificate key path. Sonarr v5+; not configured: kept as it is in Sonarr.",
+						Optional:            true,
+						Computed:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 					"cert_password": schema.StringAttribute{
 						MarkdownDescription: "Certificate Password.",
@@ -447,22 +508,8 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 	request := host.read(ctx, &resp.Diagnostics)
 	request.SetId(1)
 
-	// Unset values must keep the current ones, since the API rejects empty allowed hosts
-	if !request.AllowedHosts.IsSet() || !request.TrustedNetworks.IsSet() {
-		current, _, err := r.client.HostConfigAPI.GetHostConfig(r.auth).Execute()
-		if err != nil {
-			resp.Diagnostics.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Read, hostResourceName, err))
-
-			return
-		}
-
-		if !request.AllowedHosts.IsSet() {
-			request.SetAllowedHosts(current.GetAllowedHosts())
-		}
-
-		if !request.TrustedNetworks.IsSet() {
-			request.SetTrustedNetworks(current.GetTrustedNetworks())
-		}
+	if !r.keepUnset(request, &resp.Diagnostics) {
+		return
 	}
 
 	// Create new Host
@@ -516,6 +563,10 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	// Build Update resource
 	request := host.read(ctx, &resp.Diagnostics)
 
+	if !r.keepUnset(request, &resp.Diagnostics) {
+		return
+	}
+
 	// Update Host
 	response, _, err := r.client.HostConfigAPI.UpdateHostConfig(r.auth, strconv.Itoa(int(request.GetId()))).HostConfigResource(*request).Execute()
 	if err != nil {
@@ -540,6 +591,49 @@ func (r *HostResource) ImportState(ctx context.Context, req resource.ImportState
 	tflog.Trace(ctx, "imported "+hostResourceName+": 1")
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), 1)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("authentication").AtName("password"), req.ID)...)
+}
+
+// keepUnset fills what the plan leaves unset with Sonarr's current values: the API rejects empty
+// allowed hosts, and Sonarr v5 answers 500 when an OIDC or SSL key field is missing (and would
+// reset it otherwise). Sonarr v4 has no OIDC/SSL key fields: they stay unset there.
+func (r *HostResource) keepUnset(request *sonarr.HostConfigResource, diags *diag.Diagnostics) bool {
+	current, _, err := r.client.HostConfigAPI.GetHostConfig(r.auth).Execute()
+	if err != nil {
+		diags.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Read, hostResourceName, err))
+
+		return false
+	}
+
+	fillHostFromCurrent(request, current)
+
+	return true
+}
+
+func fillHostFromCurrent(request, current *sonarr.HostConfigResource) {
+	if !request.AllowedHosts.IsSet() {
+		request.SetAllowedHosts(current.GetAllowedHosts())
+	}
+
+	if !request.TrustedNetworks.IsSet() {
+		request.SetTrustedNetworks(current.GetTrustedNetworks())
+	}
+
+	for _, f := range []struct {
+		has     bool
+		current func() (*string, bool)
+		set     func(string)
+	}{
+		{request.HasOidcAuthority(), current.GetOidcAuthorityOk, request.SetOidcAuthority},
+		{request.HasOidcClientId(), current.GetOidcClientIdOk, request.SetOidcClientId},
+		{request.HasOidcClientSecret(), current.GetOidcClientSecretOk, request.SetOidcClientSecret},
+		{request.HasOidcScopes(), current.GetOidcScopesOk, request.SetOidcScopes},
+		{request.HasOidcUserIdentifier(), current.GetOidcUserIdentifierOk, request.SetOidcUserIdentifier},
+		{request.HasSslKeyPath(), current.GetSslKeyPathOk, request.SetSslKeyPath},
+	} {
+		if v, ok := f.current(); !f.has && ok {
+			f.set(derefString(v))
+		}
+	}
 }
 
 func (h *Host) write(ctx context.Context, host *sonarr.HostConfigResource, diags *diag.Diagnostics) {
@@ -613,11 +707,17 @@ func (a *AuthConfig) write(host *sonarr.HostConfigResource) {
 	a.Username = types.StringValue(host.GetUsername())
 	a.EncryptedPassword = types.StringValue(host.GetPassword())
 	a.Required = types.StringValue(string(host.GetAuthenticationRequired()))
+	a.OidcAuthority = keepOrRead(a.OidcAuthority, host.GetOidcAuthorityOk)
+	a.OidcClientID = keepOrRead(a.OidcClientID, host.GetOidcClientIdOk)
+	a.OidcClientSecret = keepOrRead(a.OidcClientSecret, host.GetOidcClientSecretOk)
+	a.OidcScopes = keepOrRead(a.OidcScopes, host.GetOidcScopesOk)
+	a.OidcUserIdentifier = keepOrRead(a.OidcUserIdentifier, host.GetOidcUserIdentifierOk)
 }
 
 func (s *SSLConfig) write(host *sonarr.HostConfigResource) {
 	s.CertificateValidation = types.StringValue(string(host.GetCertificateValidation()))
 	s.CertPath = types.StringValue(host.GetSslCertPath())
+	s.KeyPath = keepOrRead(s.KeyPath, host.GetSslKeyPathOk)
 	s.CertPassword = types.StringValue(host.GetSslCertPassword())
 	s.Port = types.Int64Value(int64(host.GetSslPort()))
 	s.Enabled = types.BoolValue(host.GetEnableSsl())
@@ -707,11 +807,17 @@ func (a *AuthConfig) read(host *sonarr.HostConfigResource) {
 	host.SetAuthenticationRequired(sonarr.AuthenticationRequiredType(a.Required.ValueString()))
 	host.SetPassword(a.Password.ValueString())
 	host.SetPasswordConfirmation(a.Password.ValueString())
+	setIfKnown(a.OidcAuthority, host.SetOidcAuthority)
+	setIfKnown(a.OidcClientID, host.SetOidcClientId)
+	setIfKnown(a.OidcClientSecret, host.SetOidcClientSecret)
+	setIfKnown(a.OidcScopes, host.SetOidcScopes)
+	setIfKnown(a.OidcUserIdentifier, host.SetOidcUserIdentifier)
 }
 
 func (s *SSLConfig) read(host *sonarr.HostConfigResource) {
 	host.SetCertificateValidation(sonarr.CertificateValidationType(s.CertificateValidation.ValueString()))
 	host.SetSslCertPath(s.CertPath.ValueString())
+	setIfKnown(s.KeyPath, host.SetSslKeyPath)
 	host.SetSslCertPassword(s.CertPassword.ValueString())
 	host.SetSslPort(int32(s.Port.ValueInt64()))
 	host.SetEnableSsl(s.Enabled.ValueBool())

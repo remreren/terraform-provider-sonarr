@@ -30,7 +30,11 @@ resource "sonarr_release_profile" "example" {
 
 ### Optional
 
+- `air_date_grace_period` (Number) Days after the air date (air_date_restriction). Sonarr v5+; not configured: kept as it is in Sonarr.
+- `air_date_restriction` (Boolean) Only apply to releases of episodes that aired (within air_date_grace_period days). Sonarr v5+; not configured: kept as it is in Sonarr.
+- `allow_season_pack_without_all_episodes_aired` (Boolean) Allow season packs before every episode aired. Sonarr v5+; not configured: kept as it is in Sonarr.
 - `enabled` (Boolean) Enabled.
+- `excluded_tags` (Set of Number) Tags of series this profile does not apply to. Sonarr v5+; not configured: kept as it is in Sonarr.
 - `ignored` (Set of String) Ignored terms. At least one of `required` and `ignored` must be set.
 - `indexer_id` (Number) Indexer ID. Default to all.
 - `name` (String) Release profile name.

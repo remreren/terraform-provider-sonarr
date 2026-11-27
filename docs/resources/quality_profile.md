@@ -83,7 +83,10 @@ Optional:
 Optional:
 
 - `id` (Number) Quality ID.
+- `max_size` (Number) Maximum size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).
+- `min_size` (Number) Minimum size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).
 - `name` (String) Quality name.
+- `preferred_size` (Number) Preferred size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).
 - `resolution` (Number) Resolution.
 - `source` (String) Source.
 

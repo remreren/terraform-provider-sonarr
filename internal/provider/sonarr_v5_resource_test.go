@@ -26,6 +26,19 @@ func sonarrMajor(t *testing.T) int {
 	return major
 }
 
+// onV5 runs check only against Sonarr v5+.
+func onV5(t *testing.T, check resource.TestCheckFunc) resource.TestCheckFunc {
+	t.Helper()
+
+	return func(s *terraform.State) error {
+		if sonarrMajor(t) < 5 {
+			return nil
+		}
+
+		return check(s)
+	}
+}
+
 // Media management with user_rejected_extensions: on v5 it is applied and read back; on v4 the
 // field doesn't exist, the plan is kept. Before the fix v5 answered 500 on every create.
 func TestAccMediaManagementUserRejectedExtensions(t *testing.T) {
@@ -36,7 +49,8 @@ func TestAccMediaManagementUserRejectedExtensions(t *testing.T) {
 			{
 				Config: testAccMediaManagementResourceConfig("none"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("sonarr_media_management.test", "user_rejected_extensions", ""),
+					// not configured: kept as Sonarr has it (v5), nothing on v4
+					onV5(t, checkMediaManagementKeptFromSonarr(t)),
 				),
 			},
 			{
@@ -49,6 +63,24 @@ func TestAccMediaManagementUserRejectedExtensions(t *testing.T) {
 			},
 		},
 	})
+}
+
+// checkMediaManagementKeptFromSonarr: the state's unconfigured v5 fields equal Sonarr's values.
+func checkMediaManagementKeptFromSonarr(t *testing.T) resource.TestCheckFunc {
+	t.Helper()
+
+	return func(s *terraform.State) error {
+		cfg, _, err := testAccAPIClient().MediaManagementConfigAPI.GetMediaManagementConfig(context.Background()).Execute()
+		if err != nil {
+			return err
+		}
+
+		return resource.ComposeAggregateTestCheckFunc(
+			resource.TestCheckResourceAttr("sonarr_media_management.test", "user_rejected_extensions", cfg.GetUserRejectedExtensions()),
+			resource.TestCheckResourceAttr("sonarr_media_management.test", "season_pack_upgrade", string(cfg.GetSeasonPackUpgrade())),
+			resource.TestCheckResourceAttr("sonarr_media_management.test", "skip_free_space_check_when_grabbing", fmt.Sprint(cfg.GetSkipFreeSpaceCheckWhenGrabbing())),
+		)(s)
+	}
 }
 
 func checkUserRejectedExtensionsInSonarr(t *testing.T, want string) resource.TestCheckFunc {

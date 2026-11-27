@@ -76,6 +76,11 @@ Read-Only:
 
 - `encrypted_password` (String, Sensitive) Needed for validation.
 - `method` (String) Authentication method.
+- `oidc_authority` (String) OIDC authority (issuer URL). Sonarr v5+.
+- `oidc_client_id` (String) OIDC client ID. Sonarr v5+.
+- `oidc_client_secret` (String, Sensitive) OIDC client secret. Sonarr v5+.
+- `oidc_scopes` (String) OIDC scopes. Sonarr v5+.
+- `oidc_user_identifier` (String) OIDC claim that identifies the user. Sonarr v5+.
 - `password` (String, Sensitive) Password.
 - `required` (String) Required for everyone or disabled for local addresses.
 - `username` (String) Username.
@@ -126,6 +131,7 @@ Read-Only:
 - `cert_path` (String) Certificate path.
 - `certificate_validation` (String) Certificate validation.
 - `enabled` (Boolean) Enabled.
+- `key_path` (String) Certificate key path. Sonarr v5+.
 - `port` (Number) SSL port.
 
 

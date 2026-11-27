@@ -161,6 +161,27 @@ func (d *HostDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 						MarkdownDescription: "Required for everyone or disabled for local addresses.",
 						Computed:            true,
 					},
+					"oidc_authority": schema.StringAttribute{
+						MarkdownDescription: "OIDC authority (issuer URL). Sonarr v5+.",
+						Computed:            true,
+					},
+					"oidc_client_id": schema.StringAttribute{
+						MarkdownDescription: "OIDC client ID. Sonarr v5+.",
+						Computed:            true,
+					},
+					"oidc_client_secret": schema.StringAttribute{
+						MarkdownDescription: "OIDC client secret. Sonarr v5+.",
+						Computed:            true,
+						Sensitive:           true,
+					},
+					"oidc_scopes": schema.StringAttribute{
+						MarkdownDescription: "OIDC scopes. Sonarr v5+.",
+						Computed:            true,
+					},
+					"oidc_user_identifier": schema.StringAttribute{
+						MarkdownDescription: "OIDC claim that identifies the user. Sonarr v5+.",
+						Computed:            true,
+					},
 				},
 			},
 			"ssl": schema.SingleNestedAttribute{
@@ -173,6 +194,10 @@ func (d *HostDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 					},
 					"cert_path": schema.StringAttribute{
 						MarkdownDescription: "Certificate path.",
+						Computed:            true,
+					},
+					"key_path": schema.StringAttribute{
+						MarkdownDescription: "Certificate key path. Sonarr v5+.",
 						Computed:            true,
 					},
 					"cert_password": schema.StringAttribute{

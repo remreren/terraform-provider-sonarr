@@ -86,6 +86,11 @@ Required:
 
 Optional:
 
+- `oidc_authority` (String) OIDC authority (issuer URL). Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.
+- `oidc_client_id` (String) OIDC client ID. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.
+- `oidc_client_secret` (String, Sensitive) OIDC client secret. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.
+- `oidc_scopes` (String) OIDC scopes. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.
+- `oidc_user_identifier` (String) OIDC claim that identifies the user. Sonarr v5+ (OIDC); not configured: kept as it is in Sonarr.
 - `password` (String, Sensitive) Password.
 - `required` (String) Required for everyone or disabled for local addresses.
 - `username` (String) Username.
@@ -149,6 +154,7 @@ Optional:
 
 - `cert_password` (String, Sensitive) Certificate Password.
 - `cert_path` (String) Certificate path.
+- `key_path` (String) Certificate key path. Sonarr v5+; not configured: kept as it is in Sonarr.
 - `port` (Number) SSL port.
 
 

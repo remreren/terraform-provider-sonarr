@@ -237,6 +237,10 @@ func (r *SeriesResource) Update(ctx context.Context, req resource.UpdateRequest,
 	request := series.read(ctx, &resp.Diagnostics)
 
 	// TODO: manage movefiles on sdk
+	if !keepSeriesUnset(r.auth, r.client, request, &resp.Diagnostics) {
+		return
+	}
+
 	response, _, err := r.client.SeriesAPI.UpdateSeries(r.auth, strconv.Itoa(int(request.GetId()))).SeriesResource(*request).Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Update, seriesResourceName, err))

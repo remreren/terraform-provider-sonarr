@@ -62,6 +62,13 @@ resource "sonarr_media_management" "example" {
 - `skip_free_space_check` (Boolean) Skip free space check before importing.
 - `unmonitor_previous_episodes` (Boolean) Unmonitor deleted files.
 
+### Optional
+
+- `season_pack_upgrade` (String) Upgrade to a season pack: 'all' (every episode is an upgrade), 'threshold' (at least season_pack_upgrade_threshold percent are) or 'any'. Sonarr v5+; not configured: kept as it is in Sonarr.
+- `season_pack_upgrade_threshold` (Number) Percent of episodes a season pack must upgrade (season_pack_upgrade = 'threshold'). Sonarr v5+; not configured: kept as it is in Sonarr.
+- `skip_free_space_check_when_grabbing` (Boolean) Skip the free space check when grabbing. Sonarr v5+; not configured: kept as it is in Sonarr.
+- `user_rejected_extensions` (String) Comma separated list of file extensions to reject on import. Sonarr v5+; not configured: kept as it is in Sonarr.
+
 ### Read-Only
 
 - `id` (Number) Media Management ID.

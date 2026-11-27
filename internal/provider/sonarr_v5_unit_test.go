@@ -192,3 +192,157 @@ func TestQualityGroupReadSendsOnlyConfiguredSizes(t *testing.T) {
 		t.Fatal(diags)
 	}
 }
+
+func TestFillHostFromCurrentV5(t *testing.T) {
+	t.Parallel()
+
+	current := mustUnmarshal[sonarr.HostConfigResource](t, `{"id":1,"allowedHosts":"a","trustedNetworks":"b",
+		"oidcAuthority":"https://id","oidcClientId":"c","oidcClientSecret":"s","oidcScopes":"openid","oidcUserIdentifier":"","sslKeyPath":"/k"}`)
+	request := sonarr.NewHostConfigResource()
+	request.SetOidcClientId("mine")
+	fillHostFromCurrent(request, current)
+
+	out, _ := json.Marshal(request)
+	for _, want := range []string{`"oidcAuthority":"https://id"`, `"oidcClientId":"mine"`, `"oidcClientSecret":"s"`, `"oidcScopes":"openid"`, `"oidcUserIdentifier":""`, `"sslKeyPath":"/k"`, `"allowedHosts":"a"`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("%s missing (v5 answers 500 without it): %s", want, out)
+		}
+	}
+}
+
+func TestFillHostFromCurrentV4SendsNoOidc(t *testing.T) {
+	t.Parallel()
+
+	current := mustUnmarshal[sonarr.HostConfigResource](t, `{"id":1,"allowedHosts":"a","trustedNetworks":"b"}`)
+	request := sonarr.NewHostConfigResource()
+	fillHostFromCurrent(request, current)
+
+	out, _ := json.Marshal(request)
+	if strings.Contains(string(out), "oidc") || strings.Contains(string(out), "sslKeyPath") {
+		t.Fatalf("v4 has no OIDC fields: %s", out)
+	}
+}
+
+func TestFillMediaManagementFromCurrentKeepsUnmanaged(t *testing.T) {
+	t.Parallel()
+
+	current := mustUnmarshal[sonarr.MediaManagementConfigResource](t, `{"id":1,"userRejectedExtensions":"exe","seasonPackUpgrade":"threshold","seasonPackUpgradeThreshold":75,"skipFreeSpaceCheckWhenGrabbing":true}`)
+	m := MediaManagement{UserRejectedExtensions: types.StringUnknown(), SeasonPackUpgrade: types.StringValue("any"),
+		SeasonPackThreshold: types.Float64Unknown(), SkipFreeSpaceCheckGrab: types.BoolNull()}
+	request := m.read()
+	fillMediaManagementFromCurrent(request, current)
+
+	if request.GetUserRejectedExtensions() != "exe" || request.GetSeasonPackUpgradeThreshold() != 75 || !request.GetSkipFreeSpaceCheckWhenGrabbing() {
+		t.Fatalf("unmanaged fields must keep Sonarr's values (v5 resets them otherwise): %+v", request)
+	}
+
+	if request.GetSeasonPackUpgrade() != sonarr.SEASONPACKUPGRADETYPE_ANY {
+		t.Fatalf("configured value must win, got %v", request.GetSeasonPackUpgrade())
+	}
+}
+
+func TestReleaseProfileV5FieldsReadWriteAndKeep(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	var diags diag.Diagnostics
+
+	excluded, _ := types.SetValueFrom(ctx, types.Int64Type, []int64{4})
+	p := ReleaseProfile{
+		Tags: types.SetNull(types.Int64Type), Required: types.SetNull(types.StringType), Ignored: types.SetNull(types.StringType),
+		AirDateRestriction: types.BoolValue(true), AirDateGracePeriod: types.Int64Unknown(),
+		AllowSeasonPackNotAired: types.BoolNull(), ExcludedTags: excluded,
+	}
+	request := p.read(ctx, &diags)
+
+	current := mustUnmarshal[sonarr.ReleaseProfileResource](t, `{"id":1,"airDateRestriction":false,"airDateGracePeriod":3,"allowSeasonPackWithoutAllEpisodesAired":true,"excludedTags":[9]}`)
+	fillReleaseProfileFromCurrent(request, current)
+
+	if !request.GetAirDateRestriction() || request.GetAirDateGracePeriod() != 3 || !request.GetAllowSeasonPackWithoutAllEpisodesAired() || len(request.GetExcludedTags()) != 1 || request.GetExcludedTags()[0] != 4 {
+		t.Fatalf("configured values win, unmanaged ones keep Sonarr's: %+v", request)
+	}
+
+	v4 := mustUnmarshal[sonarr.ReleaseProfileResource](t, `{"id":1,"name":"x","enabled":true}`)
+	p.write(ctx, v4, &diags)
+
+	if !p.AirDateRestriction.ValueBool() || !p.AirDateGracePeriod.IsNull() || p.ExcludedTags.IsNull() {
+		t.Fatalf("v4 answer: keep the plan, unknown becomes null: %+v", p)
+	}
+
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+}
+
+func TestReleaseProfileWriteV4DataSourceTypedNull(t *testing.T) {
+	t.Parallel()
+
+	var diags diag.Diagnostics
+
+	p := ReleaseProfile{} // a data source: no plan, zero values
+	p.write(context.Background(), mustUnmarshal[sonarr.ReleaseProfileResource](t, `{"id":1,"name":"x"}`), &diags)
+
+	if !p.ExcludedTags.IsNull() || p.ExcludedTags.ElementType(context.Background()) == nil {
+		t.Fatalf("v4: a typed null set, got %#v", p.ExcludedTags)
+	}
+}
+
+func TestFillImportListAndSeriesFromCurrent(t *testing.T) {
+	t.Parallel()
+
+	list := sonarr.NewImportListResource()
+	fillImportListFromCurrent(list, mustUnmarshal[sonarr.ImportListResource](t, `{"id":1,"language":{"id":2,"name":"French"},"tagExisting":"sync"}`))
+
+	if !list.HasLanguage() || list.GetTagExisting() != sonarr.TAGEXISTINGTYPE_SYNC {
+		t.Fatalf("v5 import list fields must be kept: %+v", list)
+	}
+
+	empty := sonarr.NewImportListResource()
+	fillImportListFromCurrent(empty, mustUnmarshal[sonarr.ImportListResource](t, `{"id":1}`))
+
+	if empty.HasLanguage() || empty.HasTagExisting() {
+		t.Fatal("v4: nothing to copy")
+	}
+
+	series := sonarr.NewSeriesResource()
+	fillSeriesFromCurrent(series, mustUnmarshal[sonarr.SeriesResource](t, `{"id":1,"language":{"id":2,"name":"French"}}`))
+
+	if !series.HasLanguage() {
+		t.Fatal("v5 series language must be kept")
+	}
+}
+
+func TestFillProfileSizesKeepsUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	source := mustUnmarshal[sonarr.QualityProfileResource](t, `{"items":[
+	  {"quality":{"id":1},"items":[],"minSize":2,"maxSize":100,"preferredSize":95},
+	  {"name":"WEB 1080p","items":[{"quality":{"id":3},"items":[],"minSize":4,"maxSize":85,"preferredSize":60}]},
+	  {"quality":{"id":9},"items":[],"minSize":null,"maxSize":null,"preferredSize":null}]}`)
+	request := mustUnmarshal[sonarr.QualityProfileResource](t, `{"items":[
+	  {"quality":{"id":1},"items":[],"allowed":false},
+	  {"name":"WEB 1080p","items":[{"quality":{"id":3},"items":[],"minSize":7}]},
+	  {"quality":{"id":9},"items":[]}]}`)
+	fillProfileSizes(request, source)
+
+	single, grouped, empty := request.Items[0], request.Items[1].Items[0], request.Items[2]
+	if single.GetMinSize() != 2 || single.GetMaxSize() != 100 || single.GetPreferredSize() != 95 {
+		t.Fatalf("unconfigured (not allowed) quality: Sonarr's sizes, got %v/%v/%v", single.GetMinSize(), single.GetMaxSize(), single.GetPreferredSize())
+	}
+
+	if grouped.GetMinSize() != 7 || grouped.GetMaxSize() != 85 || grouped.GetPreferredSize() != 60 {
+		t.Fatalf("configured min stays, the rest from Sonarr, got %v/%v/%v", grouped.GetMinSize(), grouped.GetMaxSize(), grouped.GetPreferredSize())
+	}
+
+	if v, ok := empty.GetMinSizeOk(); !ok || v != nil {
+		t.Fatal("a null size in Sonarr stays null")
+	}
+
+	noSizes := mustUnmarshal[sonarr.QualityProfileResource](t, `{"items":[{"quality":{"id":1},"items":[]}]}`)
+	fillProfileSizes(noSizes, mustUnmarshal[sonarr.QualityProfileResource](t, `{"items":[{"quality":{"id":1},"items":[]}]}`))
+
+	if out, _ := json.Marshal(noSizes); strings.Contains(string(out), "Size") {
+		t.Fatalf("v4 source: nothing copied: %s", out)
+	}
+}
