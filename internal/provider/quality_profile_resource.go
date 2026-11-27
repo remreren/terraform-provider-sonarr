@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -76,10 +77,59 @@ type QualityGroup struct {
 func (g QualityGroup) getType() attr.Type {
 	return types.ObjectType{}.WithAttributeTypes(
 		map[string]attr.Type{
-			"qualities": types.ListType{}.WithElementType(Quality{}.getType()),
+			"qualities": types.ListType{}.WithElementType(ProfileQuality{}.getType()),
 			"name":      types.StringType,
 			"id":        types.Int64Type,
 		})
+}
+
+// ProfileQuality is a quality in a QualityGroup. The sizes (MB/min) are per profile from Sonarr v5
+// (v4 keeps them on the quality definitions: null here).
+type ProfileQuality struct {
+	Name          types.String  `tfsdk:"name"`
+	Source        types.String  `tfsdk:"source"`
+	ID            types.Int64   `tfsdk:"id"`
+	Resolution    types.Int64   `tfsdk:"resolution"`
+	MinSize       types.Float64 `tfsdk:"min_size"`
+	MaxSize       types.Float64 `tfsdk:"max_size"`
+	PreferredSize types.Float64 `tfsdk:"preferred_size"`
+}
+
+func (q ProfileQuality) getType() attr.Type {
+	return types.ObjectType{}.WithAttributeTypes(
+		map[string]attr.Type{
+			"name":           types.StringType,
+			"source":         types.StringType,
+			"id":             types.Int64Type,
+			"resolution":     types.Int64Type,
+			"min_size":       types.Float64Type,
+			"max_size":       types.Float64Type,
+			"preferred_size": types.Float64Type,
+		})
+}
+
+// sizeValue is a size from Sonarr: null when it has none (v4, or a group).
+func sizeValue(v float64, ok bool) types.Float64 {
+	if !ok {
+		return types.Float64Null()
+	}
+
+	return types.Float64Value(v)
+}
+
+// setSizes puts the configured sizes on a profile item; unset (null or unknown) ones are not sent.
+func (q ProfileQuality) setSizes(item *sonarr.QualityProfileQualityItemResource) {
+	if !q.MinSize.IsNull() && !q.MinSize.IsUnknown() {
+		item.SetMinSize(q.MinSize.ValueFloat64())
+	}
+
+	if !q.MaxSize.IsNull() && !q.MaxSize.IsUnknown() {
+		item.SetMaxSize(q.MaxSize.ValueFloat64())
+	}
+
+	if !q.PreferredSize.IsNull() && !q.PreferredSize.IsUnknown() {
+		item.SetPreferredSize(q.PreferredSize.ValueFloat64())
+	}
 }
 
 // FormatItem is part of QualityProfile.
@@ -220,6 +270,30 @@ func (r QualityProfileResource) getQualitySchema() schema.Schema {
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"min_size": schema.Float64Attribute{
+				MarkdownDescription: "Minimum size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"max_size": schema.Float64Attribute{
+				MarkdownDescription: "Maximum size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"preferred_size": schema.Float64Attribute{
+				MarkdownDescription: "Preferred size (MB/min). Sonarr v5+: sizes are set per quality profile there; v4 has them on sonarr_quality_definition (null here).",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.UseStateForUnknown(),
 				},
 			},
 		},
@@ -411,7 +485,7 @@ func (g *QualityGroup) write(ctx context.Context, group *sonarr.QualityProfileQu
 	name := types.StringValue(group.GetName())
 	id := types.Int64Value(int64(group.GetId()))
 
-	qualities := make([]Quality, len(group.GetItems()))
+	qualities := make([]ProfileQuality, len(group.GetItems()))
 	for m, q := range group.GetItems() {
 		qualities[m].write(&q)
 	}
@@ -419,25 +493,37 @@ func (g *QualityGroup) write(ctx context.Context, group *sonarr.QualityProfileQu
 	if len(group.GetItems()) == 0 {
 		name = types.StringNull()
 		id = types.Int64Null()
-		qualities = []Quality{{
-			ID:         types.Int64Value(int64(group.Quality.GetId())),
-			Name:       types.StringValue(group.Quality.GetName()),
-			Source:     types.StringValue(string(group.Quality.GetSource())),
-			Resolution: types.Int64Value(int64(group.Quality.GetResolution())),
-		}}
+		single := ProfileQuality{}
+		single.write(group) // a single quality: its sizes are on the item itself
+		qualities = []ProfileQuality{single}
 	}
 
 	g.Name = name
 	g.ID = id
-	g.Qualities, tempDiag = types.ListValueFrom(ctx, Quality{}.getType(), &qualities)
+	g.Qualities, tempDiag = types.ListValueFrom(ctx, ProfileQuality{}.getType(), &qualities)
 	diags.Append(tempDiag...)
 }
 
-func (q *Quality) write(quality *sonarr.QualityProfileQualityItemResource) {
+func (q *ProfileQuality) write(quality *sonarr.QualityProfileQualityItemResource) {
 	q.ID = types.Int64Value(int64(quality.Quality.GetId()))
 	q.Name = types.StringValue(quality.Quality.GetName())
 	q.Source = types.StringValue(string(quality.Quality.GetSource()))
 	q.Resolution = types.Int64Value(int64(quality.Quality.GetResolution()))
+
+	minSize, minOk := quality.GetMinSizeOk()
+	maxSize, maxOk := quality.GetMaxSizeOk()
+	preferredSize, preferredOk := quality.GetPreferredSizeOk()
+	q.MinSize = sizeValue(derefFloat(minSize), minOk && minSize != nil)
+	q.MaxSize = sizeValue(derefFloat(maxSize), maxOk && maxSize != nil)
+	q.PreferredSize = sizeValue(derefFloat(preferredSize), preferredOk && preferredSize != nil)
+}
+
+func derefFloat(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+
+	return *v
 }
 
 func (f *FormatItem) write(format *sonarr.ProfileFormatItemResource) {
@@ -511,7 +597,7 @@ func (p *QualityProfile) read(ctx context.Context, qualitiesIDs []int32, formatI
 }
 
 func (g *QualityGroup) read(ctx context.Context, allowedQualities *[]int32, diags *diag.Diagnostics) *sonarr.QualityProfileQualityItemResource {
-	q := make([]Quality, len(g.Qualities.Elements()))
+	q := make([]ProfileQuality, len(g.Qualities.Elements()))
 	diags.Append(g.Qualities.ElementsAs(ctx, &q, false)...)
 
 	if len(q) == 1 {
@@ -524,6 +610,7 @@ func (g *QualityGroup) read(ctx context.Context, allowedQualities *[]int32, diag
 		item := sonarr.NewQualityProfileQualityItemResource()
 		item.SetAllowed(true)
 		item.SetQuality(*quality)
+		q[0].setSizes(item)
 
 		*allowedQualities = append(*allowedQualities, int32(q[0].ID.ValueInt64()))
 
@@ -545,7 +632,7 @@ func (g *QualityGroup) read(ctx context.Context, allowedQualities *[]int32, diag
 	return quality
 }
 
-func (q *Quality) read() *sonarr.QualityProfileQualityItemResource {
+func (q *ProfileQuality) read() *sonarr.QualityProfileQualityItemResource {
 	quality := sonarr.NewQuality()
 	quality.SetName(q.Name.ValueString())
 	quality.SetId(int32(q.ID.ValueInt64()))
@@ -555,6 +642,7 @@ func (q *Quality) read() *sonarr.QualityProfileQualityItemResource {
 	item := sonarr.NewQualityProfileQualityItemResource()
 	item.SetAllowed(true)
 	item.SetQuality(*quality)
+	q.setSizes(item)
 
 	return item
 }

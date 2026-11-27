@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -42,6 +43,7 @@ type MediaManagement struct {
 	RecycleBinPath            types.String `tfsdk:"recycle_bin_path"`
 	FileDate                  types.String `tfsdk:"file_date"`
 	ExtraFileExtensions       types.String `tfsdk:"extra_file_extensions"`
+	UserRejectedExtensions    types.String `tfsdk:"user_rejected_extensions"`
 	EpisodeTitleRequired      types.String `tfsdk:"episode_title_required"`
 	DownloadPropersRepacks    types.String `tfsdk:"download_propers_repacks"`
 	ChownGroup                types.String `tfsdk:"chown_group"`
@@ -138,6 +140,12 @@ func (r *MediaManagementResource) Schema(_ context.Context, _ resource.SchemaReq
 			"extra_file_extensions": schema.StringAttribute{
 				MarkdownDescription: "Comma separated list of extra files to import (.nfo will be imported as .nfo-orig).",
 				Required:            true,
+			},
+			"user_rejected_extensions": schema.StringAttribute{
+				MarkdownDescription: "Comma separated list of file extensions to reject on import (Sonarr v5+; ignored by older versions, which don't have it). Defaults to none.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"file_date": schema.StringAttribute{
 				MarkdownDescription: "Define the file date modification. valid inputs are: 'none', 'localAirDate, and 'utcAirDate'.",
@@ -275,6 +283,10 @@ func (m *MediaManagement) write(mediaMgt *sonarr.MediaManagementConfigResource) 
 	m.DownloadPropersRepacks = types.StringValue(string(mediaMgt.GetDownloadPropersAndRepacks()))
 	m.EpisodeTitleRequired = types.StringValue(string(mediaMgt.GetEpisodeTitleRequired()))
 	m.ExtraFileExtensions = types.StringValue(mediaMgt.GetExtraFileExtensions())
+	// Sonarr v4 doesn't know the field: keep what was planned instead of reading back nothing.
+	if mediaMgt.HasUserRejectedExtensions() || m.UserRejectedExtensions.IsNull() || m.UserRejectedExtensions.IsUnknown() {
+		m.UserRejectedExtensions = types.StringValue(mediaMgt.GetUserRejectedExtensions())
+	}
 	m.FileDate = types.StringValue(string(mediaMgt.GetFileDate()))
 	m.RecycleBinPath = types.StringValue(mediaMgt.GetRecycleBin())
 	m.RescanAfterRefresh = types.StringValue(string(mediaMgt.GetRescanAfterRefresh()))
@@ -298,6 +310,8 @@ func (m *MediaManagement) read() *sonarr.MediaManagementConfigResource {
 	mediaMgt.SetDownloadPropersAndRepacks(sonarr.ProperDownloadTypes(m.DownloadPropersRepacks.ValueString()))
 	mediaMgt.SetEpisodeTitleRequired(sonarr.EpisodeTitleRequiredType(m.EpisodeTitleRequired.ValueString()))
 	mediaMgt.SetExtraFileExtensions(m.ExtraFileExtensions.ValueString())
+	// Always sent: Sonarr v5 answers 500 (NullReferenceException) when it's missing.
+	mediaMgt.SetUserRejectedExtensions(m.UserRejectedExtensions.ValueString())
 	mediaMgt.SetFileDate(sonarr.FileDateType(m.FileDate.ValueString()))
 	mediaMgt.SetRecycleBin(m.RecycleBinPath.ValueString())
 	mediaMgt.SetRescanAfterRefresh(sonarr.RescanAfterRefreshType(m.RescanAfterRefresh.ValueString()))

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"testing"
 
@@ -45,6 +46,9 @@ func TestAccQualityDefinitionResource(t *testing.T) {
 				ResourceName:      "sonarr_quality_definition.test",
 				ImportState:       true,
 				ImportStateVerify: true,
+				// Sonarr v5 has no sizes on quality definitions (they are per quality profile): an
+				// import can't know the configured ones.
+				ImportStateVerifyIgnore: qualityDefinitionSizesIgnoredOnV5(t),
 			},
 			// Delete testing automatically occurs in TestCase
 		},
@@ -61,4 +65,14 @@ func testAccQualityDefinitionResourceConfig(name string) string {
 		preferred_size = 200
 	}
 	`, name)
+}
+
+func qualityDefinitionSizesIgnoredOnV5(t *testing.T) []string {
+	t.Helper()
+
+	if os.Getenv("SONARR_URL") == "" || sonarrMajor(t) < 5 {
+		return nil
+	}
+
+	return []string{"min_size", "max_size", "preferred_size"}
 }

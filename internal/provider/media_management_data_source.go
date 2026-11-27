@@ -98,6 +98,10 @@ func (d *MediaManagementDataSource) Schema(_ context.Context, _ datasource.Schem
 				MarkdownDescription: "Comma separated list of extra files to import (.nfo will be imported as .nfo-orig).",
 				Computed:            true,
 			},
+			"user_rejected_extensions": schema.StringAttribute{
+				MarkdownDescription: "Comma separated list of file extensions rejected on import (Sonarr v5+).",
+				Computed:            true,
+			},
 			"file_date": schema.StringAttribute{
 				MarkdownDescription: "Define the file date modification. valid inputs are: 'none', 'localAirDate, and 'utcAirDate'.",
 				Computed:            true,
