@@ -5,7 +5,6 @@ import (
 
 	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/devopsarr/terraform-provider-sonarr/internal/helpers"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -34,16 +33,6 @@ type Quality struct {
 	Source     types.String `tfsdk:"source"`
 	ID         types.Int64  `tfsdk:"id"`
 	Resolution types.Int64  `tfsdk:"resolution"`
-}
-
-func (q Quality) getType() attr.Type {
-	return types.ObjectType{}.WithAttributeTypes(
-		map[string]attr.Type{
-			"name":       types.StringType,
-			"source":     types.StringType,
-			"id":         types.Int64Type,
-			"resolution": types.Int64Type,
-		})
 }
 
 func (d *QualityDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {

@@ -11,10 +11,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -37,27 +39,36 @@ type ReleaseProfileResource struct {
 	auth   context.Context
 }
 
-// ReleaseProfile describes the release profile data model.
+// ReleaseProfile describes the release profile data model. ExcludedTags, AirDateGracePeriod,
+// AirDateRestriction and AllowSeasonPackNotAired are Sonarr v5+.
 type ReleaseProfile struct {
-	Tags      types.Set    `tfsdk:"tags"`
-	Ignored   types.Set    `tfsdk:"ignored"`
-	Required  types.Set    `tfsdk:"required"`
-	Name      types.String `tfsdk:"name"`
-	ID        types.Int64  `tfsdk:"id"`
-	IndexerID types.Int64  `tfsdk:"indexer_id"`
-	Enabled   types.Bool   `tfsdk:"enabled"`
+	Tags                    types.Set    `tfsdk:"tags"`
+	Ignored                 types.Set    `tfsdk:"ignored"`
+	Required                types.Set    `tfsdk:"required"`
+	ExcludedTags            types.Set    `tfsdk:"excluded_tags"`
+	Name                    types.String `tfsdk:"name"`
+	ID                      types.Int64  `tfsdk:"id"`
+	IndexerID               types.Int64  `tfsdk:"indexer_id"`
+	AirDateGracePeriod      types.Int64  `tfsdk:"air_date_grace_period"`
+	Enabled                 types.Bool   `tfsdk:"enabled"`
+	AirDateRestriction      types.Bool   `tfsdk:"air_date_restriction"`
+	AllowSeasonPackNotAired types.Bool   `tfsdk:"allow_season_pack_without_all_episodes_aired"`
 }
 
 func (p ReleaseProfile) getType() attr.Type {
 	return types.ObjectType{}.WithAttributeTypes(
 		map[string]attr.Type{
-			"tags":       types.SetType{}.WithElementType(types.Int64Type),
-			"ignored":    types.SetType{}.WithElementType(types.StringType),
-			"required":   types.SetType{}.WithElementType(types.StringType),
-			"name":       types.StringType,
-			"id":         types.Int64Type,
-			"indexer_id": types.Int64Type,
-			"enabled":    types.BoolType,
+			"tags":                  types.SetType{}.WithElementType(types.Int64Type),
+			"ignored":               types.SetType{}.WithElementType(types.StringType),
+			"required":              types.SetType{}.WithElementType(types.StringType),
+			"name":                  types.StringType,
+			"id":                    types.Int64Type,
+			"indexer_id":            types.Int64Type,
+			"enabled":               types.BoolType,
+			"excluded_tags":         types.SetType{}.WithElementType(types.Int64Type),
+			"air_date_grace_period": types.Int64Type,
+			"air_date_restriction":  types.BoolType,
+			"allow_season_pack_without_all_episodes_aired": types.BoolType,
 		})
 }
 
@@ -111,6 +122,39 @@ func (r *ReleaseProfileResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.Int64Type,
+			},
+			"excluded_tags": schema.SetAttribute{
+				MarkdownDescription: "Tags of series this profile does not apply to. Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.Int64Type,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"air_date_restriction": schema.BoolAttribute{
+				MarkdownDescription: "Only apply to releases of episodes that aired (within air_date_grace_period days). Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"air_date_grace_period": schema.Int64Attribute{
+				MarkdownDescription: "Days after the air date (air_date_restriction). Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"allow_season_pack_without_all_episodes_aired": schema.BoolAttribute{
+				MarkdownDescription: "Allow season packs before every episode aired. Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -194,6 +238,10 @@ func (r *ReleaseProfileResource) Update(ctx context.Context, req resource.Update
 	// Build Update resource
 	request := profile.read(ctx, &resp.Diagnostics)
 
+	if !r.keepUnset(request, &resp.Diagnostics) {
+		return
+	}
+
 	// Update ReleaseProfile
 	response, _, err := r.client.ReleaseProfileAPI.UpdateReleaseProfile(r.auth, strconv.Itoa(int(request.GetId()))).ReleaseProfileResource(*request).Execute()
 	if err != nil {
@@ -247,6 +295,21 @@ func (p *ReleaseProfile) write(ctx context.Context, profile *sonarr.ReleaseProfi
 	diags.Append(tempDiag...)
 	p.Tags, tempDiag = types.SetValueFrom(ctx, types.Int64Type, profile.GetTags())
 	diags.Append(tempDiag...)
+
+	// Sonarr v5+ fields: from Sonarr when it has them, else kept (v4 doesn't know them).
+	p.AirDateRestriction = keepOrReadBool(p.AirDateRestriction, profile.GetAirDateRestrictionOk)
+	p.AirDateGracePeriod = keepOrReadInt32(p.AirDateGracePeriod, profile.GetAirDateGracePeriodOk)
+	p.AllowSeasonPackNotAired = keepOrReadBool(p.AllowSeasonPackNotAired, profile.GetAllowSeasonPackWithoutAllEpisodesAiredOk)
+
+	if profile.HasExcludedTags() {
+		p.ExcludedTags, tempDiag = types.SetValueFrom(ctx, types.Int64Type, profile.GetExcludedTags())
+		diags.Append(tempDiag...)
+	} else {
+		// Sonarr v4 has none: keep the plan's; a data source (no plan) or unknown gets a typed null.
+		if p.ExcludedTags.IsNull() || p.ExcludedTags.IsUnknown() {
+			p.ExcludedTags = types.SetNull(types.Int64Type)
+		}
+	}
 }
 
 func (p *ReleaseProfile) read(ctx context.Context, diags *diag.Diagnostics) *sonarr.ReleaseProfileResource {
@@ -259,5 +322,49 @@ func (p *ReleaseProfile) read(ctx context.Context, diags *diag.Diagnostics) *son
 	diags.Append(p.Required.ElementsAs(ctx, &profile.Required, true)...)
 	diags.Append(p.Ignored.ElementsAs(ctx, &profile.Ignored, true)...)
 
+	// Sonarr v5+ fields: only what's configured; the rest comes from Sonarr (keepUnset).
+	setBoolIfKnown(p.AirDateRestriction, profile.SetAirDateRestriction)
+	setInt32IfKnown(p.AirDateGracePeriod, profile.SetAirDateGracePeriod)
+	setBoolIfKnown(p.AllowSeasonPackNotAired, profile.SetAllowSeasonPackWithoutAllEpisodesAired)
+
+	if isKnown(p.ExcludedTags) {
+		excluded := make([]int32, 0, len(p.ExcludedTags.Elements()))
+		diags.Append(p.ExcludedTags.ElementsAs(ctx, &excluded, true)...)
+		profile.SetExcludedTags(excluded)
+	}
+
 	return profile
+}
+
+// keepUnset fills the Sonarr v5+ fields the plan leaves unset with the profile's current values:
+// v5 resets a field a PUT leaves out. v4 has none of them.
+func (r *ReleaseProfileResource) keepUnset(request *sonarr.ReleaseProfileResource, diags *diag.Diagnostics) bool {
+	current, _, err := r.client.ReleaseProfileAPI.GetReleaseProfileById(r.auth, request.GetId()).Execute()
+	if err != nil {
+		diags.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Read, releaseProfileResourceName, err))
+
+		return false
+	}
+
+	fillReleaseProfileFromCurrent(request, current)
+
+	return true
+}
+
+func fillReleaseProfileFromCurrent(request, current *sonarr.ReleaseProfileResource) {
+	if v, ok := current.GetAirDateRestrictionOk(); ok && !request.HasAirDateRestriction() {
+		request.SetAirDateRestriction(*v)
+	}
+
+	if v, ok := current.GetAirDateGracePeriodOk(); ok && !request.HasAirDateGracePeriod() {
+		request.SetAirDateGracePeriod(*v)
+	}
+
+	if v, ok := current.GetAllowSeasonPackWithoutAllEpisodesAiredOk(); ok && !request.HasAllowSeasonPackWithoutAllEpisodesAired() {
+		request.SetAllowSeasonPackWithoutAllEpisodesAired(*v)
+	}
+
+	if v, ok := current.GetExcludedTagsOk(); ok && !request.HasExcludedTags() {
+		request.SetExcludedTags(v)
+	}
 }

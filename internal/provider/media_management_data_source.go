@@ -98,6 +98,22 @@ func (d *MediaManagementDataSource) Schema(_ context.Context, _ datasource.Schem
 				MarkdownDescription: "Comma separated list of extra files to import (.nfo will be imported as .nfo-orig).",
 				Computed:            true,
 			},
+			"user_rejected_extensions": schema.StringAttribute{
+				MarkdownDescription: "Comma separated list of file extensions rejected on import (Sonarr v5+).",
+				Computed:            true,
+			},
+			"season_pack_upgrade": schema.StringAttribute{
+				MarkdownDescription: "Upgrade to a season pack: 'all', 'threshold' or 'any' (Sonarr v5+).",
+				Computed:            true,
+			},
+			"season_pack_upgrade_threshold": schema.Float64Attribute{
+				MarkdownDescription: "Percent of episodes a season pack must upgrade (Sonarr v5+).",
+				Computed:            true,
+			},
+			"skip_free_space_check_when_grabbing": schema.BoolAttribute{
+				MarkdownDescription: "Skip the free space check when grabbing (Sonarr v5+).",
+				Computed:            true,
+			},
 			"file_date": schema.StringAttribute{
 				MarkdownDescription: "Define the file date modification. valid inputs are: 'none', 'localAirDate, and 'utcAirDate'.",
 				Computed:            true,

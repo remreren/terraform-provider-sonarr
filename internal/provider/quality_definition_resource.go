@@ -7,6 +7,7 @@ import (
 	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/devopsarr/terraform-provider-sonarr/internal/helpers"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -80,17 +81,17 @@ func (r *QualityDefinitionResource) Schema(_ context.Context, _ resource.SchemaR
 				Required:            true,
 			},
 			"min_size": schema.Float64Attribute{
-				MarkdownDescription: "Minimum size MB/min.",
+				MarkdownDescription: "Minimum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},
 			"max_size": schema.Float64Attribute{
-				MarkdownDescription: "Maximum size MB/min.",
+				MarkdownDescription: "Maximum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},
 			"preferred_size": schema.Float64Attribute{
-				MarkdownDescription: "Preferred size MB/min.",
+				MarkdownDescription: "Preferred size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.",
 				Optional:            true,
 				Computed:            true,
 			},
@@ -160,6 +161,7 @@ func (r *QualityDefinitionResource) Create(ctx context.Context, req resource.Cre
 	}
 
 	tflog.Trace(ctx, "created "+qualityDefinitionResourceName+": "+strconv.Itoa(int(response.GetId())))
+	sizesIgnoredWarning(response, &resp.Diagnostics)
 	// Generate resource state struct
 	definition.write(response)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &definition)...)
@@ -218,6 +220,7 @@ func (r *QualityDefinitionResource) Update(ctx context.Context, req resource.Upd
 	}
 
 	tflog.Trace(ctx, "updated "+qualityDefinitionResourceName+": "+strconv.Itoa(int(response.GetId())))
+	sizesIgnoredWarning(response, &resp.Diagnostics)
 	// Generate resource state struct
 	definition.write(response)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &definition)...)
@@ -242,11 +245,45 @@ func (r *QualityDefinitionResource) ImportState(ctx context.Context, req resourc
 	tflog.Trace(ctx, "imported "+qualityDefinitionResourceName+": "+req.ID)
 }
 
+// sizesIgnoredWarning warns when Sonarr answers without sizes (v5+): they are set per quality on
+// the quality profiles there (sonarr_quality_profile quality_groups.qualities min_size, max_size,
+// preferred_size), so this resource's sizes have no effect.
+func sizesIgnoredWarning(definition *sonarr.QualityDefinitionResource, diags *diag.Diagnostics) {
+	if definition.HasMinSize() || definition.HasMaxSize() || definition.HasPreferredSize() {
+		return
+	}
+
+	diags.AddWarning("Quality definition sizes not applied",
+		"This Sonarr version (v5+) has no sizes on quality definitions: '"+definition.GetTitle()+"' keeps its configured sizes in the state only. "+
+			"Set them per quality on sonarr_quality_profile (quality_groups.qualities: min_size, max_size, preferred_size).")
+}
+
 func (p *QualityDefinition) write(definition *sonarr.QualityDefinitionResource) {
 	p.ID = types.Int64Value(int64(definition.GetId()))
-	p.MinSize = types.Float64Value(definition.GetMinSize())
-	p.MaxSize = types.Float64Value(definition.GetMaxSize())
-	p.PreferredSize = types.Float64Value(definition.GetPreferredSize())
+	// Sonarr v5 moved the sizes to the quality profiles: its definitions have none. Keep the
+	// configured ones then (they can't be applied: see sizesIgnoredWarning) instead of reading 0;
+	// nothing configured (or an import): null.
+	switch {
+	case definition.HasMinSize():
+		p.MinSize = types.Float64Value(definition.GetMinSize())
+	case p.MinSize.IsUnknown():
+		p.MinSize = types.Float64Null()
+	}
+
+	switch {
+	case definition.HasMaxSize():
+		p.MaxSize = types.Float64Value(definition.GetMaxSize())
+	case p.MaxSize.IsUnknown():
+		p.MaxSize = types.Float64Null()
+	}
+
+	switch {
+	case definition.HasPreferredSize():
+		p.PreferredSize = types.Float64Value(definition.GetPreferredSize())
+	case p.PreferredSize.IsUnknown():
+		p.PreferredSize = types.Float64Null()
+	}
+
 	p.Title = types.StringValue(definition.GetTitle())
 	p.QualityName = types.StringValue(definition.Quality.GetName())
 	p.QualityID = types.Int64Value(int64(definition.Quality.GetId()))

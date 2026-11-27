@@ -113,6 +113,18 @@ func (d *QualityProfilesDataSource) Schema(_ context.Context, _ datasource.Schem
 													MarkdownDescription: "Source.",
 													Computed:            true,
 												},
+												"min_size": schema.Float64Attribute{
+													MarkdownDescription: "Minimum size (MB/min, Sonarr v5+).",
+													Computed:            true,
+												},
+												"max_size": schema.Float64Attribute{
+													MarkdownDescription: "Maximum size (MB/min, Sonarr v5+).",
+													Computed:            true,
+												},
+												"preferred_size": schema.Float64Attribute{
+													MarkdownDescription: "Preferred size (MB/min, Sonarr v5+).",
+													Computed:            true,
+												},
 											},
 										},
 									},

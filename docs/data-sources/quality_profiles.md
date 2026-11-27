@@ -66,6 +66,9 @@ Read-Only:
 Read-Only:
 
 - `id` (Number) Quality ID.
+- `max_size` (Number) Maximum size (MB/min, Sonarr v5+).
+- `min_size` (Number) Minimum size (MB/min, Sonarr v5+).
 - `name` (String) Quality name.
+- `preferred_size` (Number) Preferred size (MB/min, Sonarr v5+).
 - `resolution` (Number) Resolution.
 - `source` (String) Source.

@@ -28,7 +28,11 @@ data "sonarr_release_profile" "example" {
 
 ### Read-Only
 
+- `air_date_grace_period` (Number) Days after the air date (Sonarr v5+).
+- `air_date_restriction` (Boolean) Only apply to releases of episodes that aired (Sonarr v5+).
+- `allow_season_pack_without_all_episodes_aired` (Boolean) Allow season packs before every episode aired (Sonarr v5+).
 - `enabled` (Boolean) Enabled
+- `excluded_tags` (Set of Number) Tags of series this profile does not apply to (Sonarr v5+).
 - `ignored` (Set of String) Ignored terms.
 - `indexer_id` (Number) Indexer ID. Set `0` for all.
 - `name` (String) Release profile name.

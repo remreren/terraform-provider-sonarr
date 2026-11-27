@@ -35,9 +35,9 @@ resource "sonarr_quality_definition" "example" {
 
 ### Optional
 
-- `max_size` (Number) Maximum size MB/min.
-- `min_size` (Number) Minimum size MB/min.
-- `preferred_size` (Number) Preferred size MB/min.
+- `max_size` (Number) Maximum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.
+- `min_size` (Number) Minimum size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.
+- `preferred_size` (Number) Preferred size MB/min. Sonarr v4 only: v5+ has no sizes on quality definitions (set them on sonarr_quality_profile qualities); there they stay in the state only, with a warning.
 
 ### Read-Only
 

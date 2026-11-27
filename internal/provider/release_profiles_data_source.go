@@ -82,6 +82,23 @@ func (d *ReleaseProfilesDataSource) Schema(_ context.Context, _ datasource.Schem
 							Computed:            true,
 							ElementType:         types.Int64Type,
 						},
+						"excluded_tags": schema.SetAttribute{
+							MarkdownDescription: "Tags of series this profile does not apply to (Sonarr v5+).",
+							Computed:            true,
+							ElementType:         types.Int64Type,
+						},
+						"air_date_restriction": schema.BoolAttribute{
+							MarkdownDescription: "Only apply to releases of episodes that aired (Sonarr v5+).",
+							Computed:            true,
+						},
+						"air_date_grace_period": schema.Int64Attribute{
+							MarkdownDescription: "Days after the air date (Sonarr v5+).",
+							Computed:            true,
+						},
+						"allow_season_pack_without_all_episodes_aired": schema.BoolAttribute{
+							MarkdownDescription: "Allow season packs before every episode aired (Sonarr v5+).",
+							Computed:            true,
+						},
 					},
 				},
 			},

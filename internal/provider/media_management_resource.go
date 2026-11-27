@@ -7,11 +7,15 @@ import (
 	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/devopsarr/terraform-provider-sonarr/internal/helpers"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -37,25 +41,29 @@ type MediaManagementResource struct {
 
 // MediaManagement describes the media management data model.
 type MediaManagement struct {
-	ChmodFolder               types.String `tfsdk:"chmod_folder"`
-	RescanAfterRefresh        types.String `tfsdk:"rescan_after_refresh"`
-	RecycleBinPath            types.String `tfsdk:"recycle_bin_path"`
-	FileDate                  types.String `tfsdk:"file_date"`
-	ExtraFileExtensions       types.String `tfsdk:"extra_file_extensions"`
-	EpisodeTitleRequired      types.String `tfsdk:"episode_title_required"`
-	DownloadPropersRepacks    types.String `tfsdk:"download_propers_repacks"`
-	ChownGroup                types.String `tfsdk:"chown_group"`
-	ID                        types.Int64  `tfsdk:"id"`
-	MinimumFreeSpace          types.Int64  `tfsdk:"minimum_free_space"`
-	RecycleBinDays            types.Int64  `tfsdk:"recycle_bin_days"`
-	UnmonitorPreviousEpisodes types.Bool   `tfsdk:"unmonitor_previous_episodes"`
-	SkipFreeSpaceCheck        types.Bool   `tfsdk:"skip_free_space_check"`
-	SetPermissions            types.Bool   `tfsdk:"set_permissions"`
-	ImportExtraFiles          types.Bool   `tfsdk:"import_extra_files"`
-	EnableMediaInfo           types.Bool   `tfsdk:"enable_media_info"`
-	DeleteEmptyFolders        types.Bool   `tfsdk:"delete_empty_folders"`
-	CreateEmptyFolders        types.Bool   `tfsdk:"create_empty_folders"`
-	HardlinksCopy             types.Bool   `tfsdk:"hardlinks_copy"`
+	SeasonPackThreshold       types.Float64 `tfsdk:"season_pack_upgrade_threshold"`
+	DownloadPropersRepacks    types.String  `tfsdk:"download_propers_repacks"`
+	RecycleBinPath            types.String  `tfsdk:"recycle_bin_path"`
+	FileDate                  types.String  `tfsdk:"file_date"`
+	ExtraFileExtensions       types.String  `tfsdk:"extra_file_extensions"`
+	UserRejectedExtensions    types.String  `tfsdk:"user_rejected_extensions"`
+	SeasonPackUpgrade         types.String  `tfsdk:"season_pack_upgrade"`
+	RescanAfterRefresh        types.String  `tfsdk:"rescan_after_refresh"`
+	ChmodFolder               types.String  `tfsdk:"chmod_folder"`
+	EpisodeTitleRequired      types.String  `tfsdk:"episode_title_required"`
+	ChownGroup                types.String  `tfsdk:"chown_group"`
+	ID                        types.Int64   `tfsdk:"id"`
+	MinimumFreeSpace          types.Int64   `tfsdk:"minimum_free_space"`
+	RecycleBinDays            types.Int64   `tfsdk:"recycle_bin_days"`
+	SkipFreeSpaceCheckGrab    types.Bool    `tfsdk:"skip_free_space_check_when_grabbing"`
+	UnmonitorPreviousEpisodes types.Bool    `tfsdk:"unmonitor_previous_episodes"`
+	SkipFreeSpaceCheck        types.Bool    `tfsdk:"skip_free_space_check"`
+	SetPermissions            types.Bool    `tfsdk:"set_permissions"`
+	ImportExtraFiles          types.Bool    `tfsdk:"import_extra_files"`
+	EnableMediaInfo           types.Bool    `tfsdk:"enable_media_info"`
+	DeleteEmptyFolders        types.Bool    `tfsdk:"delete_empty_folders"`
+	CreateEmptyFolders        types.Bool    `tfsdk:"create_empty_folders"`
+	HardlinksCopy             types.Bool    `tfsdk:"hardlinks_copy"`
 }
 
 func (r *MediaManagementResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -139,6 +147,41 @@ func (r *MediaManagementResource) Schema(_ context.Context, _ resource.SchemaReq
 				MarkdownDescription: "Comma separated list of extra files to import (.nfo will be imported as .nfo-orig).",
 				Required:            true,
 			},
+			"user_rejected_extensions": schema.StringAttribute{
+				MarkdownDescription: "Comma separated list of file extensions to reject on import. Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"season_pack_upgrade": schema.StringAttribute{
+				MarkdownDescription: "Upgrade to a season pack: 'all' (every episode is an upgrade), 'threshold' (at least season_pack_upgrade_threshold percent are) or 'any'. Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("all", "threshold", "any"),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"season_pack_upgrade_threshold": schema.Float64Attribute{
+				MarkdownDescription: "Percent of episodes a season pack must upgrade (season_pack_upgrade = 'threshold'). Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Float64{
+					float64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"skip_free_space_check_when_grabbing": schema.BoolAttribute{
+				MarkdownDescription: "Skip the free space check when grabbing. Sonarr v5+; not configured: kept as it is in Sonarr.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"file_date": schema.StringAttribute{
 				MarkdownDescription: "Define the file date modification. valid inputs are: 'none', 'localAirDate, and 'utcAirDate'.",
 				Required:            true,
@@ -181,6 +224,10 @@ func (r *MediaManagementResource) Create(ctx context.Context, req resource.Creat
 	// Build Create resource
 	request := management.read()
 	request.SetId(1)
+
+	if !r.keepUnset(request, &resp.Diagnostics) {
+		return
+	}
 
 	// Create new MediaManagement
 	response, _, err := r.client.MediaManagementConfigAPI.UpdateMediaManagementConfig(r.auth, strconv.Itoa(int(request.GetId()))).MediaManagementConfigResource(*request).Execute()
@@ -233,6 +280,10 @@ func (r *MediaManagementResource) Update(ctx context.Context, req resource.Updat
 	// Build Update resource
 	request := management.read()
 
+	if !r.keepUnset(request, &resp.Diagnostics) {
+		return
+	}
+
 	// Update MediaManagement
 	response, _, err := r.client.MediaManagementConfigAPI.UpdateMediaManagementConfig(r.auth, strconv.Itoa(int(request.GetId()))).MediaManagementConfigResource(*request).Execute()
 	if err != nil {
@@ -275,9 +326,53 @@ func (m *MediaManagement) write(mediaMgt *sonarr.MediaManagementConfigResource) 
 	m.DownloadPropersRepacks = types.StringValue(string(mediaMgt.GetDownloadPropersAndRepacks()))
 	m.EpisodeTitleRequired = types.StringValue(string(mediaMgt.GetEpisodeTitleRequired()))
 	m.ExtraFileExtensions = types.StringValue(mediaMgt.GetExtraFileExtensions())
+	// Sonarr v5+ fields: from Sonarr when it has them, else kept (v4 doesn't know them).
+	m.UserRejectedExtensions = keepOrRead(m.UserRejectedExtensions, mediaMgt.GetUserRejectedExtensionsOk)
+	m.SeasonPackThreshold = keepOrReadFloat(m.SeasonPackThreshold, mediaMgt.GetSeasonPackUpgradeThresholdOk)
+	m.SkipFreeSpaceCheckGrab = keepOrReadBool(m.SkipFreeSpaceCheckGrab, mediaMgt.GetSkipFreeSpaceCheckWhenGrabbingOk)
+
+	if mediaMgt.HasSeasonPackUpgrade() {
+		m.SeasonPackUpgrade = types.StringValue(string(mediaMgt.GetSeasonPackUpgrade()))
+	} else if m.SeasonPackUpgrade.IsUnknown() {
+		m.SeasonPackUpgrade = types.StringNull()
+	}
+
 	m.FileDate = types.StringValue(string(mediaMgt.GetFileDate()))
 	m.RecycleBinPath = types.StringValue(mediaMgt.GetRecycleBin())
 	m.RescanAfterRefresh = types.StringValue(string(mediaMgt.GetRescanAfterRefresh()))
+}
+
+// keepUnset fills the Sonarr v5+ fields the plan leaves unset with Sonarr's current values: v5
+// answers 500 without userRejectedExtensions and resets the others. v4 has none of them.
+func (r *MediaManagementResource) keepUnset(request *sonarr.MediaManagementConfigResource, diags *diag.Diagnostics) bool {
+	current, _, err := r.client.MediaManagementConfigAPI.GetMediaManagementConfig(r.auth).Execute()
+	if err != nil {
+		diags.AddError(helpers.ClientError, helpers.ParseClientError(helpers.Read, mediaManagementResourceName, err))
+
+		return false
+	}
+
+	fillMediaManagementFromCurrent(request, current)
+
+	return true
+}
+
+func fillMediaManagementFromCurrent(request, current *sonarr.MediaManagementConfigResource) {
+	if v, ok := current.GetUserRejectedExtensionsOk(); ok && !request.HasUserRejectedExtensions() {
+		request.SetUserRejectedExtensions(derefString(v))
+	}
+
+	if v, ok := current.GetSeasonPackUpgradeOk(); ok && !request.HasSeasonPackUpgrade() {
+		request.SetSeasonPackUpgrade(*v)
+	}
+
+	if v, ok := current.GetSeasonPackUpgradeThresholdOk(); ok && !request.HasSeasonPackUpgradeThreshold() {
+		request.SetSeasonPackUpgradeThreshold(*v)
+	}
+
+	if v, ok := current.GetSkipFreeSpaceCheckWhenGrabbingOk(); ok && !request.HasSkipFreeSpaceCheckWhenGrabbing() {
+		request.SetSkipFreeSpaceCheckWhenGrabbing(*v)
+	}
 }
 
 func (m *MediaManagement) read() *sonarr.MediaManagementConfigResource {
@@ -298,6 +393,15 @@ func (m *MediaManagement) read() *sonarr.MediaManagementConfigResource {
 	mediaMgt.SetDownloadPropersAndRepacks(sonarr.ProperDownloadTypes(m.DownloadPropersRepacks.ValueString()))
 	mediaMgt.SetEpisodeTitleRequired(sonarr.EpisodeTitleRequiredType(m.EpisodeTitleRequired.ValueString()))
 	mediaMgt.SetExtraFileExtensions(m.ExtraFileExtensions.ValueString())
+	// Sonarr v5+ fields: only what's configured; the rest comes from Sonarr (keepUnset).
+	setIfKnown(m.UserRejectedExtensions, mediaMgt.SetUserRejectedExtensions)
+	setFloatIfKnown(m.SeasonPackThreshold, mediaMgt.SetSeasonPackUpgradeThreshold)
+	setBoolIfKnown(m.SkipFreeSpaceCheckGrab, mediaMgt.SetSkipFreeSpaceCheckWhenGrabbing)
+
+	if isKnown(m.SeasonPackUpgrade) {
+		mediaMgt.SetSeasonPackUpgrade(sonarr.SeasonPackUpgradeType(m.SeasonPackUpgrade.ValueString()))
+	}
+
 	mediaMgt.SetFileDate(sonarr.FileDateType(m.FileDate.ValueString()))
 	mediaMgt.SetRecycleBin(m.RecycleBinPath.ValueString())
 	mediaMgt.SetRescanAfterRefresh(sonarr.RescanAfterRefreshType(m.RescanAfterRefresh.ValueString()))
